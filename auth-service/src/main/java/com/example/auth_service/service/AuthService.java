@@ -28,6 +28,7 @@ public class AuthService {
         private final PasswordEncoder passwordEncoder;
         private final AuthenticationManager authenticationManager;
         private final JwtService jwtService;
+        private final RefreshTokenService refreshTokenService;
 
         public AuthResponse register(RegisterRequest request) {
                 if (userRepository.existsByUsername(request.getUsername())) {
@@ -56,13 +57,13 @@ public class AuthService {
                 roles.add(userRole);
 
                 user.setRoles(roles);
+                userRepository.save(user);
 
                 String jwt = jwtService.generateToken(user);
                 String refreshToken = jwtService.generateRefreshToken(user);
+                Date refreshTokenExpiryDate = jwtService.extractExpiration(refreshToken);
 
-                user.setRefreshToken(refreshToken);
-                user.setRefreshTokenExpiryDate(jwtService.extractExpiration(refreshToken));
-                userRepository.save(user);
+                refreshTokenService.saveRefreshToken(user.getUsername(), refreshToken, refreshTokenExpiryDate);
 
                 return AuthResponse.builder()
                                 .accessToken(jwt)
@@ -85,10 +86,9 @@ public class AuthService {
 
                 String jwt = jwtService.generateToken(user);
                 String refreshToken = jwtService.generateRefreshToken(user);
+                Date refreshTokenExpiryDate = jwtService.extractExpiration(refreshToken);
 
-                user.setRefreshToken(refreshToken);
-                user.setRefreshTokenExpiryDate(jwtService.extractExpiration(refreshToken));
-                userRepository.save(user);
+                refreshTokenService.saveRefreshToken(user.getUsername(), refreshToken, refreshTokenExpiryDate);
 
                 return AuthResponse.builder()
                                 .accessToken(jwt)
@@ -105,17 +105,20 @@ public class AuthService {
                 User user = userRepository.findByUsername(username)
                                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-                if (!jwtService.isTokenValid(refreshToken, user) || !user.getRefreshToken().equals(refreshToken)
-                                || user.getRefreshTokenExpiryDate().before(new Date())) {
+                String storedRefreshToken = refreshTokenService.getRefreshToken(username);
+                if (storedRefreshToken == null || !storedRefreshToken.equals(refreshToken)) {
+                        throw new RuntimeException("Invalid refresh token");
+                }
+
+                if (!jwtService.isTokenValid(refreshToken, user)) {
                         throw new RuntimeException("Invalid or expired refresh token");
                 }
 
                 String newAccessToken = jwtService.generateToken(user);
                 String newRefreshToken = jwtService.generateRefreshToken(user);
+                Date newRefreshTokenExpiryDate = jwtService.extractExpiration(newRefreshToken);
 
-                user.setRefreshToken(newRefreshToken);
-                user.setRefreshTokenExpiryDate(jwtService.extractExpiration(newRefreshToken));
-                userRepository.save(user);
+                refreshTokenService.saveRefreshToken(username, newRefreshToken, newRefreshTokenExpiryDate);
 
                 return AuthResponse.builder()
                                 .accessToken(newAccessToken)

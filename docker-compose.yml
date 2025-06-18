@@ -10,11 +10,14 @@ services:
       - mongodb_data:/data/db
     networks:
       - microservice-network
-    healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+
+  redis:
+    image: redis:latest
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - microservice-network
 
   discoveryserver:
     build: ./discoveryserver
@@ -24,14 +27,16 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE=prod
       - JAVA_OPTS=-Xmx512m -Xms256m
+      - EUREKA_INSTANCE_PREFER_IP_ADDRESS=true
+      - EUREKA_INSTANCE_HOSTNAME=discoveryserver
+      - EUREKA_CLIENT_REGISTER_WITH_EUREKA=false
+      - EUREKA_CLIENT_FETCH_REGISTRY=false
+      - EUREKA_SERVER_ENABLE_SELF_PRESERVATION=false
+      - EUREKA_SERVER_WAIT_TIME_IN_MS_WHEN_SYNC_EMPTY=0
+      - EUREKA_SERVER_RENEWAL_PERCENT_THRESHOLD=0.85
+      - SERVER_PORT=8761
     networks:
       - microservice-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8761/actuator/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
 
   auth-service:
     build: ./auth-service
@@ -42,14 +47,21 @@ services:
       - SPRING_PROFILES_ACTIVE=prod
       - JAVA_OPTS=-Xmx512m -Xms256m
       - spring.data.mongodb.uri=mongodb://mongodb:27017/authdb
+      - spring.data.redis.host=redis
+      - spring.data.redis.port=6379
       - eureka.client.service-url.defaultZone=http://discoveryserver:8761/eureka
-    depends_on:
-      discoveryserver:
-        condition: service_healthy
-      mongodb:
-        condition: service_healthy
+      - EUREKA_INSTANCE_PREFER_IP_ADDRESS=true
+      - EUREKA_INSTANCE_HOSTNAME=auth-service
+      - EUREKA_CLIENT_INSTANCE_PREFER_IP_ADDRESS=true
+      - EUREKA_INSTANCE_LEASE_RENEWAL_INTERVAL_IN_SECONDS=5
+      - EUREKA_INSTANCE_LEASE_EXPIRATION_DURATION_IN_SECONDS=10
+      - SERVER_PORT=8081
     networks:
       - microservice-network
+    depends_on:
+      - discoveryserver
+      - mongodb
+      - redis
 
   productservice:
     build: ./productservice
@@ -61,13 +73,17 @@ services:
       - JAVA_OPTS=-Xmx512m -Xms256m
       - spring.data.mongodb.uri=mongodb://mongodb:27017/product
       - eureka.client.service-url.defaultZone=http://discoveryserver:8761/eureka
-    depends_on:
-      discoveryserver:
-        condition: service_healthy
-      mongodb:
-        condition: service_healthy
+      - EUREKA_INSTANCE_PREFER_IP_ADDRESS=true
+      - EUREKA_INSTANCE_HOSTNAME=productservice
+      - EUREKA_CLIENT_INSTANCE_PREFER_IP_ADDRESS=true
+      - EUREKA_INSTANCE_LEASE_RENEWAL_INTERVAL_IN_SECONDS=5
+      - EUREKA_INSTANCE_LEASE_EXPIRATION_DURATION_IN_SECONDS=10
+      - SERVER_PORT=8082
     networks:
       - microservice-network
+    depends_on:
+      - discoveryserver
+      - mongodb
 
   apigateway:
     build: ./apigateway
@@ -78,19 +94,22 @@ services:
       - SPRING_PROFILES_ACTIVE=prod
       - JAVA_OPTS=-Xmx512m -Xms256m
       - eureka.client.service-url.defaultZone=http://discoveryserver:8761/eureka
-    depends_on:
-      discoveryserver:
-        condition: service_healthy
-      auth-service:
-        condition: service_started
-      productservice:
-        condition: service_started
+      - EUREKA_INSTANCE_PREFER_IP_ADDRESS=true
+      - EUREKA_INSTANCE_HOSTNAME=apigateway
+      - EUREKA_CLIENT_INSTANCE_PREFER_IP_ADDRESS=true
+      - EUREKA_INSTANCE_LEASE_RENEWAL_INTERVAL_IN_SECONDS=5
+      - EUREKA_INSTANCE_LEASE_EXPIRATION_DURATION_IN_SECONDS=10
+      - SERVER_PORT=8080
     networks:
       - microservice-network
+    depends_on:
+      - discoveryserver
+      - auth-service
+      - productservice
 
 volumes:
   mongodb_data:
 
 networks:
   microservice-network:
-    driver: bridge 
+    driver: bridge

@@ -11,7 +11,6 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
 import java.util.Collection;
-import java.util.Date;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -30,9 +29,6 @@ public class User implements UserDetails {
 
     @DBRef
     private Set<Role> roles = new HashSet<>();
-
-    private String refreshToken;
-    private Date refreshTokenExpiryDate;
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
